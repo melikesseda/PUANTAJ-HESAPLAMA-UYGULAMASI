@@ -1,0 +1,345 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Data.SqlClient;
+
+namespace puantaj
+{
+    public partial class Form1 : Form
+    {
+        private string connectionString = "Data Source=SILKURULUM;Initial Catalog=calisanSaatleri;User ID=sa;Password=E7410b85..;";
+
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            // Form yüklendiğinde çalışacak kodları buraya ekleyin
+            CalculateDailyWorkingHours();
+        }
+
+        private void CalculateMonthlyWorkingHours()
+        {
+            SqlConnection connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            string query = "SELECT calisanID, Giris, Cikis FROM calismaSaatleri";
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            Dictionary<int, TimeSpan> calisanToplamCalismaSuresi = new Dictionary<int, TimeSpan>();
+
+            while (reader.Read())
+            {
+                int calisanID = (int)reader["calisanID"];
+                TimeSpan girisZamani = TimeSpan.FromMinutes((int)reader["Giris"]);
+                TimeSpan cikisZamani = TimeSpan.FromMinutes((int)reader["Cikis"]);
+
+                TimeSpan calismaSuresi = cikisZamani - girisZamani;
+
+                if (calisanToplamCalismaSuresi.ContainsKey(calisanID))
+                {
+                    calisanToplamCalismaSuresi[calisanID] += calismaSuresi;
+                }
+                else
+                {
+                    calisanToplamCalismaSuresi[calisanID] = calismaSuresi;
+                }
+            }
+
+            reader.Close();
+            connection.Close();
+
+            StringBuilder sb = new StringBuilder();
+            foreach (var kvp in calisanToplamCalismaSuresi)
+            {
+                int calisanID = kvp.Key;
+                TimeSpan toplamCalismaSuresi = kvp.Value;
+
+                int saat = (int)toplamCalismaSuresi.TotalHours;
+                int dakika = toplamCalismaSuresi.Minutes;
+                int saniye = toplamCalismaSuresi.Seconds;
+
+                sb.AppendLine("Çalışan ID: " + calisanID + " - Aylık Toplam Çalışma Süresi: " + saat + " saat " + dakika + " dakika " + saniye + " saniye");
+            }
+
+            MessageBox.Show(sb.ToString(), "Aylık Toplam Çalışma Süresi");
+        }
+
+        private void CalculateDailyWorkingHours()
+        {
+            SqlConnection connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            string query = "SELECT calisanID, Giris, Cikis FROM calismaSaatleri";
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            Dictionary<int, TimeSpan> calisanCalismaSuresi = new Dictionary<int, TimeSpan>();
+
+            while (reader.Read())
+            {
+                int calisanID = (int)reader["calisanID"];
+                TimeSpan girisZamani = TimeSpan.FromMinutes((int)reader["Giris"]);
+                TimeSpan cikisZamani = TimeSpan.FromMinutes((int)reader["Cikis"]);
+
+                TimeSpan calismaSuresi = cikisZamani - girisZamani;
+
+                // bir kullanıcının birden fazla giriş çıkış değerleri varsa
+                if (calisanCalismaSuresi.ContainsKey(calisanID))
+                {
+                    calisanCalismaSuresi[calisanID] += calismaSuresi;
+                }
+                else
+                {
+                    calisanCalismaSuresi[calisanID] = calismaSuresi;
+                }
+            }
+
+            reader.Close();
+            connection.Close();
+
+            // Çalışanların toplam çalışma süresini göstermek için örnek bir çıktı oluştur
+            StringBuilder sb = new StringBuilder();
+            foreach (var kvp in calisanCalismaSuresi)
+            {
+                int calisanID = kvp.Key;
+                TimeSpan toplamCalismaSuresi = kvp.Value;
+
+                int toplamSaniye = (int)toplamCalismaSuresi.TotalSeconds;
+
+                int saat = toplamSaniye / 3600;
+                int dakika = (toplamSaniye % 3600) / 60;
+                int saniye = toplamSaniye % 60;
+
+                sb.AppendLine("Çalışan ID: " + calisanID + " - Günlük Toplam Çalışma Süresi: " + saat + " saat " + dakika + " dakika " + saniye + " saniye (" + toplamSaniye + " saniye)");
+            }
+
+           
+        }
+
+
+
+        private void btnEkle_Click(object sender, EventArgs e)
+        {
+            int calisanID;
+            if (int.TryParse(txtCalisanID.Text, out calisanID))
+            {
+                DateTime girisTarihi = dateGirisCikis.Value.Date; // Sadece tarih kısmını alıyoruz
+                int girisDakika;
+                int cikisDakika;
+
+                if (int.TryParse(txtGirisSaati.Text, out girisDakika) && int.TryParse(txtCikisSaati.Text, out cikisDakika))
+                {
+                    TimeSpan girisZamani = TimeSpan.FromMinutes(girisDakika);
+                    TimeSpan cikisZamani = TimeSpan.FromMinutes(cikisDakika);
+
+                    DateTime girisCikisZamani = girisTarihi.Add(girisZamani); // Tarih ve saat bilgilerini birleştiriyoruz
+
+                    // Veritabanına ekleme işlemi
+                    SqlConnection connection = new SqlConnection(connectionString);
+                    connection.Open();
+
+                    string query = "INSERT INTO calismaSaatleri (Giris_saati, Cikis_saati, Giris, Cikis, Tarih, calisanID) VALUES (@GirisSaati, @CikisSaati, @Giris, @Cikis, @Tarih, @CalisanID)";
+                    SqlCommand command = new SqlCommand(query, connection);
+                    command.Parameters.AddWithValue("@GirisSaati", girisCikisZamani.ToString("HH:mm")); // 24 saat formatında saat bilgisini alıyoruz
+                    command.Parameters.AddWithValue("@CikisSaati", girisCikisZamani.Add(cikisZamani - girisZamani).ToString("HH:mm")); // Çıkış zamanını hesaplayarak saat bilgisini alıyoruz
+                    command.Parameters.AddWithValue("@Giris", girisDakika);
+                    command.Parameters.AddWithValue("@Cikis", cikisDakika);
+                    command.Parameters.AddWithValue("@Tarih", girisTarihi);
+                    command.Parameters.AddWithValue("@CalisanID", calisanID);
+                    command.ExecuteNonQuery();
+
+                    connection.Close();
+
+                    MessageBox.Show("Çalışan bilgileri başarıyla eklendi.", "Başarılı");
+                }
+                else
+                {
+                    MessageBox.Show("Geçerli bir giriş ve çıkış saatleri girin.", "Hata");
+                }
+            }
+            else
+            {
+                MessageBox.Show("Lütfen geçerli bir çalışan ID'si girin.", "Hata");
+            }
+        }
+
+
+        private void btnGosterCalisanBilgileri_Click(object sender, EventArgs e)
+        {
+            SqlConnection connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            string query = "SELECT * FROM calisanlar";
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            DataTable dataTable = new DataTable();
+            dataTable.Load(reader);
+
+            dataGridView1.DataSource = dataTable;
+
+            reader.Close();
+            connection.Close();
+
+        }
+
+        private void btnGoster_Click_1(object sender, EventArgs e)
+        {
+            SqlConnection connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            string query = "SELECT c.calisanID ,cs.Giris_saati, cs.Cikis_saati, cs.Giris, cs.Cikis , cs.tarih FROM calismaSaatleri cs INNER JOIN calisanlar c ON cs.calisanID = c.calisanID";
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            DataTable dataTable = new DataTable();
+            dataTable.Load(reader);
+
+            dataGridView1.DataSource = dataTable;
+
+            reader.Close();
+            connection.Close();
+        }
+
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+
+            int calisanID;
+            if (int.TryParse(txtCalisanID.Text, out calisanID))
+            {
+                SqlConnection connection = new SqlConnection(connectionString);
+                connection.Open();
+
+                string query = "SELECT Giris, Cikis FROM calismaSaatleri WHERE calisanID = @CalisanID";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@CalisanID", calisanID);
+                SqlDataReader reader = command.ExecuteReader();
+
+                TimeSpan toplamCalismaSuresi = TimeSpan.Zero;
+
+                while (reader.Read())
+                {
+                    TimeSpan girisZamani = TimeSpan.FromMinutes((int)reader["Giris"]);
+                    TimeSpan cikisZamani = TimeSpan.FromMinutes((int)reader["Cikis"]);
+
+                    TimeSpan calismaSuresi = cikisZamani - girisZamani;
+                    toplamCalismaSuresi += calismaSuresi;
+                }
+
+                reader.Close();
+                connection.Close();
+
+                double toplamSaat = toplamCalismaSuresi.TotalHours;
+                MessageBox.Show("Çalışan ID: " + calisanID + " - Toplam Çalışma Süresi: " + toplamSaat.ToString("F1") + " saat");
+            }
+            else
+            {
+                MessageBox.Show("Lütfen geçerli bir çalışan ID'si girin.", "Hata");
+            }
+        }
+
+        private void btnCalisanAylık_Click(object sender, EventArgs e)
+        {
+            int calisanID;
+            if (int.TryParse(txtCalisanID.Text, out calisanID))
+            {
+                SqlConnection connection = new SqlConnection(connectionString);
+                connection.Open();
+
+                string query = "SELECT Giris, Cikis FROM calismaSaatleri WHERE calisanID = @CalisanID";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@CalisanID", calisanID);
+                SqlDataReader reader = command.ExecuteReader();
+
+                TimeSpan toplamCalismaSuresi = TimeSpan.Zero;
+
+                while (reader.Read())
+                {
+                    TimeSpan girisZamani = TimeSpan.FromMinutes((int)reader["Giris"]);
+                    TimeSpan cikisZamani = TimeSpan.FromMinutes((int)reader["Cikis"]);
+
+                    TimeSpan calismaSuresi = cikisZamani - girisZamani;
+                    toplamCalismaSuresi += calismaSuresi;
+                }
+
+                reader.Close();
+                connection.Close();
+
+                double toplamSaat = toplamCalismaSuresi.TotalHours;
+                int tamSaat = (int)toplamSaat;
+                int dakika = (int)((toplamSaat - tamSaat) * 60);
+
+                MessageBox.Show("Çalışan ID: " + calisanID + " - Aylık Çalışma Süresi: " + tamSaat + "," + dakika.ToString("D2") + " saat");
+
+            }
+            else
+            {
+                MessageBox.Show("Lütfen geçerli bir çalışan ID'si girin.", "Hata");
+            }
+        }
+
+        private void dateGirisCikis_ValueChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void btnGunlukEksikSaat_Click(object sender, EventArgs e)
+        {
+            int calisanID;
+            if (int.TryParse(txtCalisanID.Text, out calisanID))
+            {
+                DateTime tarih = dateGirisCikis.Value.Date; // Sadece tarih kısmını alıyoruz
+
+                SqlConnection connection = new SqlConnection(connectionString);
+                connection.Open();
+
+                string query = "SELECT Giris, Cikis FROM calismaSaatleri WHERE calisanID = @CalisanID AND Tarih = @Tarih";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@CalisanID", calisanID);
+                command.Parameters.AddWithValue("@Tarih", tarih);
+                SqlDataReader reader = command.ExecuteReader();
+
+                TimeSpan toplamCalismaSuresi = TimeSpan.Zero;
+
+                while (reader.Read())
+                {
+                    TimeSpan girisZamani = TimeSpan.FromMinutes((int)reader["Giris"]);
+                    TimeSpan cikisZamani = TimeSpan.FromMinutes((int)reader["Cikis"]);
+
+                    TimeSpan calismaSuresi = cikisZamani - girisZamani;
+                    toplamCalismaSuresi += calismaSuresi;
+                }
+
+                reader.Close();
+                connection.Close();
+
+                double toplamSaat = toplamCalismaSuresi.TotalHours;
+
+                if (toplamSaat < 9)
+                {
+                    double eksikSaat = 9 - toplamSaat;
+                    MessageBox.Show("Çalışan ID: " + calisanID + " -- " + tarih.ToShortDateString() + " tarihinde " + eksikSaat.ToString("F1") + " saat eksik çalıştı.");
+                }
+                else
+                {
+                    MessageBox.Show("Çalışan ID: " + calisanID + " -- " + tarih.ToShortDateString() + " tarihinde eksik çalışma bulunmamaktadır.");
+                }
+            }
+            else
+            {
+                MessageBox.Show("Lütfen geçerli bir çalışan ID'si girin.", "Hata");
+            }
+        }
+
+    }
+}
